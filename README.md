@@ -18,13 +18,13 @@ Este serviço faz parte de uma arquitetura de microsserviços coordenada via **S
 | [fiap-soat-os-service](https://github.com/zmathmatos/fiap-soat-os-service) | Ordens de serviço, cadastro (usuários/veículos), orquestração da Saga |
 | [fiap-soat-billing-service](https://github.com/zmathmatos/fiap-soat-billing-service) | Orçamento e pagamento (Mercado Pago) |
 | **fiap-soat-execution-service** | ← Este repo — Fila de execução, diagnóstico e reparos |
-| [fiap-soat-tech-challenge-lambda](https://github.com/zmathmatos/fiap-soat-tech-challenge-lambda) | Lambda de autenticação via CPF |
-| [fiap-soat-tech-challenge-infra-k8s](https://github.com/zmathmatos/fiap-soat-tech-challenge-infra-k8s) | Infraestrutura Kubernetes (VPC, EKS, mensageria) via Terraform |
 | [fiap-soat-tech-challenge-infra-db](https://github.com/zmathmatos/fiap-soat-tech-challenge-infra-db) | Infraestrutura dos bancos de dados via Terraform |
 
 ## Banco de dados
 
-**PostgreSQL** (SQL) — instância própria e exclusiva deste serviço. Nenhum outro serviço acessa este banco diretamente.
+**PostgreSQL** (SQL) — instância própria e exclusiva deste serviço. Ele vai ter seu próprio schema (para separação lógica do bancos) chamado `execution`. Nenhum outro serviço acessa este banco diretamente.
+
+> OBSERVAÇÃO: Devido à questão de limitação de créditos do AWS Academy, teremos o banco de dados provisionado pelo repositório `fiap-soat-tech-challenge-infra-db` e a isolamento dos bancos dos microsserviços será lógico. Mas estamos cientes de que em uma aplicação real cada serviço possui seu próprio banco.
 
 ## Comunicação
 
