@@ -8,12 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Core responsibilities:**
 - Maintain two FIFO queues: **Diagnosis Queue** and **In Execution Queue** — service orders must be processed in the exact order they were received
-- Receive `diagnostic.finished` events via SQS/SNS to register parts and services required for a repair
+- Receive `diagnostic.finished` events via RabbitMQ to register parts and services required for a repair
 - Update order status throughout the diagnosis and repair lifecycle
 - Notify `fiap-soat-os-service` upon completion via `execution.finished` or `execution.failed` events
 
 **Communication:**
-- **Async**: SQS/SNS for event-driven integration with other services
+- **Async**: RabbitMQ for event-driven integration with other services
 - **Sync**: REST API (Express) for querying execution queue state
 
 ## Architecture
@@ -24,8 +24,8 @@ The project follows **Clean Architecture** with four layers:
 src/
   domain/          # Entities, value objects, repository interfaces, domain events
   application/     # Use cases, DTOs, application services
-  infrastructure/  # Postgres (TypeORM or Prisma), SQS/SNS clients, HTTP clients
-  interface/       # Express routes, controllers, middleware, SQS consumers
+  infrastructure/  # Postgres (TypeORM or Prisma), RabbitMQ clients, HTTP clients
+  interface/       # Express routes, controllers, middleware, RabbitMQ consumers
 ```
 
 Dependencies point inward: `interface` → `application` → `domain`. Infrastructure implements interfaces defined in the domain.
@@ -37,7 +37,7 @@ The two queues are the central data structure of the service. They behave as ord
 - **Runtime**: Node.js with TypeScript
 - **Framework**: Express
 - **Database**: PostgreSQL (dedicated instance, exclusive to this service)
-- **Messaging**: AWS SQS/SNS
+- **Messaging**: RabbitMQ
 - **Infrastructure**: Terraform (AWS provisioning)
 - **Deployment**: Kubernetes on AWS; Docker + Docker Compose for local development and image build
 - **CI/CD**: GitHub Actions — CI runs tests, CD deploys to AWS
@@ -68,7 +68,7 @@ docker compose down    # Stop and remove containers
 
 - Minimum **80% coverage** enforced (lines, branches, functions)
 - **Unit tests** for all use cases, domain entities, and pure business logic — no real DB or HTTP
-- **Integration tests** for repository implementations and SQS consumers where the behavior cannot be adequately covered by mocks
+- **Integration tests** for repository implementations and RabbitMQ consumers where the behavior cannot be adequately covered by mocks
 - Tests live alongside source files or in a `test/` mirror structure — follow whichever convention is established at scaffolding time
 
 ## Infrastructure
