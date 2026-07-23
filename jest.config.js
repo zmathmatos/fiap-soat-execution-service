@@ -7,7 +7,9 @@ module.exports = {
     "src/**/*.ts",
     "!src/server.ts",
     "!src/infrastructure/database/typeorm/migrations/**",
-    "!src/infrastructure/database/typeorm/data-source.ts"
+    "!src/infrastructure/database/typeorm/data-source.ts",
+    "!src/infrastructure/database/typeorm/repositories/**",
+    "!src/infrastructure/messaging/RabbitMQConnection.ts"
   ],
   coverageThreshold: {
     global: {

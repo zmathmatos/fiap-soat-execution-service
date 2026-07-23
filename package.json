@@ -13,10 +13,10 @@
     "start": "node dist/server.js",
     "lint": "eslint src tests features",
     "test": "jest",
-    "test:unit": "jest --testPathPatterns=tests/unit",
-    "test:int": "jest --testPathPatterns=tests/integration --runInBand",
+    "test:unit": "jest --testPathPattern=tests/unit",
+    "test:int": "jest --testPathPattern=tests/integration --runInBand",
     "test:bdd": "cucumber-js",
-    "test:coverage": "jest --coverage --testPathPatterns=tests/unit",
+    "test:coverage": "jest --coverage --testPathPattern=tests/unit",
     "migrate": "typeorm-ts-node-commonjs migration:run -d src/infrastructure/database/typeorm/data-source.ts",
     "publish-event": "ts-node scripts/publish-event.ts"
   },

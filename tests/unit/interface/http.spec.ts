@@ -39,6 +39,13 @@ describe("HTTP API", () => {
         expect(res.status).toBe(200);
         expect(res.body).toEqual({ status: "ok", database: true, rabbitmq: true });
     });
+    it("returns 500 for unexpected errors", async () => {
+        const ctx = makeApp();
+        jest.spyOn(ctx.repo, "findQueue").mockRejectedValueOnce(new Error("boom"));
+        const res = await request(ctx.app).get("/api/queues/diagnosis");
+        expect(res.status).toBe(500);
+        expect(res.body).toEqual({ error: "Internal server error" });
+    });
     it("GET /api/queues/diagnosis returns the FIFO diagnosis queue", async () => {
         const ctx = makeApp();
         await ctx.enqueueForDiagnosis.execute({ serviceOrderId: "os-1", serviceOrderNumber: 1 });

@@ -130,6 +130,13 @@ describe("ServiceOrderEventsConsumer", () => {
         await flush();
         expect(channel.nack).toHaveBeenCalledWith(expect.anything(), false, false);
     });
+    it("drops messages with unknown routing key without requeue", async () => {
+        const { channel, handlers, serviceOrderConsumer } = makeConsumers();
+        await serviceOrderConsumer.start();
+        handlers.get("execution-service.service-order-events")!(makeMessage("order.mystery", { serviceOrderId: "os-1" }, "m6"));
+        await flush();
+        expect(channel.nack).toHaveBeenCalledWith(expect.anything(), false, false);
+    });
     it("requeues on transient failures (repository unavailable)", async () => {
         const { repo, channel, handlers, serviceOrderConsumer } = makeConsumers();
         jest.spyOn(repo, "findByServiceOrderId").mockRejectedValueOnce(new Error("ECONNREFUSED"));
@@ -140,6 +147,13 @@ describe("ServiceOrderEventsConsumer", () => {
     });
 });
 describe("PaymentEventsConsumer", () => {
+    it("drops messages with unknown routing key without requeue", async () => {
+        const { channel, handlers, paymentConsumer } = makeConsumers();
+        await paymentConsumer.start();
+        handlers.get("execution-service.payment-events")!(makeMessage("payment.mystery", { serviceOrderId: "os-1" }, "c0"));
+        await flush();
+        expect(channel.nack).toHaveBeenCalledWith(expect.anything(), false, false);
+    });
     it("moves order to the execution queue on payment.approved", async () => {
         const { repo, handlers, serviceOrderConsumer, paymentConsumer } = makeConsumers();
         await serviceOrderConsumer.start();
