@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { buildApp } from "./app";
 import { env } from "./infrastructure/config/env";
 import { logger } from "./infrastructure/logger";
-import { AppDataSource } from "./infrastructure/database/typeorm/data-source";
+import { AppDataSource, initializeDatabase } from "./infrastructure/database/typeorm/data-source";
 import { TypeORMExecutionOrderRepository } from "./infrastructure/database/typeorm/repositories/TypeORMExecutionOrderRepository";
 import { TypeORMProcessedEventRepository } from "./infrastructure/database/typeorm/repositories/TypeORMProcessedEventRepository";
 import { RabbitMQConnection } from "./infrastructure/messaging/RabbitMQConnection";
@@ -19,8 +19,7 @@ import { FailExecution } from "./application/use-cases/FailExecution";
 import { GetQueue } from "./application/use-cases/GetQueue";
 import { GetExecutionOrder } from "./application/use-cases/GetExecutionOrder";
 async function main(): Promise<void> {
-    const dataSource = await AppDataSource.initialize();
-    await dataSource.runMigrations();
+    const dataSource = await initializeDatabase(AppDataSource);
     logger.info("Database connected, migrations applied");
     const orderRepository = new TypeORMExecutionOrderRepository(dataSource);
     const processedEvents = new TypeORMProcessedEventRepository(dataSource);

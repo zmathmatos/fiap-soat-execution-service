@@ -1,5 +1,5 @@
 import { DataSource } from "typeorm";
-import { AppDataSource } from "../../src/infrastructure/database/typeorm/data-source";
+import { AppDataSource, initializeDatabase } from "../../src/infrastructure/database/typeorm/data-source";
 import { TypeORMExecutionOrderRepository } from "../../src/infrastructure/database/typeorm/repositories/TypeORMExecutionOrderRepository";
 import { TypeORMProcessedEventRepository } from "../../src/infrastructure/database/typeorm/repositories/TypeORMProcessedEventRepository";
 import { ExecutionOrder, ExecutionOrderStatus } from "../../src/domain/entities/ExecutionOrder";
@@ -10,8 +10,7 @@ describe("TypeORM repositories (integration)", () => {
     let orders: TypeORMExecutionOrderRepository;
     let events: TypeORMProcessedEventRepository;
     beforeAll(async () => {
-        dataSource = await AppDataSource.initialize();
-        await dataSource.runMigrations();
+        dataSource = await initializeDatabase(AppDataSource);
         orders = new TypeORMExecutionOrderRepository(dataSource);
         events = new TypeORMProcessedEventRepository(dataSource);
     });

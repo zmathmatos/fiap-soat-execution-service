@@ -4,6 +4,16 @@ import { env } from "../../config/env";
 import { ExecutionOrderEntity } from "./entities/ExecutionOrderEntity";
 import { ProcessedEventEntity } from "./entities/ProcessedEventEntity";
 import { InitialSchema1753142400000 } from "./migrations/1753142400000-InitialSchema";
+export async function initializeDatabase(dataSource: DataSource): Promise<DataSource> {
+    if (!dataSource.isInitialized)
+        await dataSource.initialize();
+    const schema = (dataSource.options as {
+        schema?: string;
+    }).schema ?? "execution";
+    await dataSource.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+    await dataSource.runMigrations();
+    return dataSource;
+}
 export const AppDataSource = new DataSource({
     type: "postgres",
     host: env.db.host,
