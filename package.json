@@ -1,0 +1,50 @@
+{
+  "name": "fiap-soat-execution-service",
+  "version": "1.0.0",
+  "description": "FIAP SOAT Tech Challenge - Execution and Production microservice (Fase 4)",
+  "main": "dist/server.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "start": "node dist/server.js",
+    "lint": "eslint src tests features",
+    "test": "jest",
+    "test:unit": "jest --testPathPatterns=tests/unit",
+    "test:int": "jest --testPathPatterns=tests/integration --runInBand",
+    "test:bdd": "cucumber-js",
+    "test:coverage": "jest --coverage --testPathPatterns=tests/unit",
+    "migrate": "typeorm-ts-node-commonjs migration:run -d src/infrastructure/database/typeorm/data-source.ts",
+    "publish-event": "ts-node scripts/publish-event.ts"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.5",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "pg": "^8.13.1",
+    "pino": "^9.6.0",
+    "reflect-metadata": "^0.2.2",
+    "typeorm": "^0.3.20",
+    "uuid": "^11.0.5"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "^11.2.0",
+    "@eslint/js": "^9.18.0",
+    "@types/amqplib": "^0.10.6",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.10.7",
+    "@types/supertest": "^6.0.2",
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.20.0",
+    "eslint": "^9.18.0"
+  }
+}
