@@ -45,17 +45,18 @@ The two queues are the central data structure of the service. They behave as ord
 
 ## Commands
 
-> These will be defined as the project is scaffolded. Expected conventions:
-
 ```bash
 npm run build          # Compile TypeScript to dist/
-npm run dev            # Start with hot reload (ts-node-dev or nodemon)
+npm run dev            # Start with hot reload (ts-node-dev)
 npm run lint           # ESLint
 npm run test           # Jest — all tests
 npm run test:unit      # Unit tests only
-npm run test:int       # Integration tests only
-npm run test:coverage  # Coverage report (must stay ≥ 80%)
-npm run test -- --testPathPattern=<file>  # Run a single test file
+npm run test:int       # Integration tests only (requires Postgres from docker compose)
+npm run test:bdd       # Cucumber BDD scenarios (features/)
+npm run test:coverage  # Coverage report (must stay ≥ 80%, unit tests)
+npm run migrate        # Run TypeORM migrations manually (also run on boot)
+npm run publish-event -- <routing.key> <serviceOrderId> [number]  # Simulate sibling services
+npx jest tests/unit/domain/ExecutionOrder.spec.ts  # Run a single test file
 ```
 
 Docker:
