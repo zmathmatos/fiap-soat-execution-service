@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Service Overview
 
-`fiap-soat-execution-service` is a Node.js/TypeScript microservice responsible for managing the work order execution queue in an automotive workshop system. It is part of a larger microservices architecture using the **Saga Pattern (orchestrated)**, where `fiap-soat-os-service` acts as orchestrator.
+`fiap-soat-execution-service` is a Node.js/TypeScript microservice responsible for managing the work order execution queue in an automotive workshop system. It is part of a larger microservices architecture using the **Saga Pattern (Choreography)** — there is no central orchestrator; each service publishes and reacts to domain events over RabbitMQ to carry the saga forward.
 
 **Core responsibilities:**
 - Maintain two FIFO queues: **Diagnosis Queue** and **In Execution Queue** — service orders must be processed in the exact order they were received
