@@ -7,7 +7,8 @@ export const env = {
         user: process.env.DB_USER ?? "postgres",
         password: process.env.DB_PASSWORD ?? "postgres",
         name: process.env.DB_NAME ?? "fiap_soat_db",
-        schema: process.env.DB_SCHEMA ?? "execution"
+        schema: process.env.DB_SCHEMA ?? "execution",
+        ssl: process.env.DB_SSL === "true" || process.env.NODE_ENV === "production"
     },
     rabbitmq: {
         url: process.env.RABBITMQ_URL ?? "amqp://guest:guest@localhost:5672",

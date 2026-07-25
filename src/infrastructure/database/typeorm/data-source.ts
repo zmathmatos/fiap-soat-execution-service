@@ -22,6 +22,7 @@ export const AppDataSource = new DataSource({
     password: env.db.password,
     database: env.db.name,
     schema: env.db.schema,
+    ssl: env.db.ssl ? { rejectUnauthorized: false } : false,
     entities: [ExecutionOrderEntity, ProcessedEventEntity],
     migrations: [InitialSchema1753142400000],
     migrationsRun: false,
