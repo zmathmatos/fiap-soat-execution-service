@@ -4,17 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Service Overview
 
-`fiap-soat-execution-service` is a Node.js/TypeScript microservice responsible for managing the work order execution queue in an automotive workshop system. It is part of a larger microservices architecture using the **Saga Pattern (Choreography)** — there is no central orchestrator; each service publishes and reacts to domain events over RabbitMQ to carry the saga forward.
+`fiap-soat-execution-service` is a Node.js/TypeScript microservice responsible for managing the work order execution queue in an automotive workshop system. It is part of a larger microservices architecture using the **Saga Pattern (choreography)** — there is no central orchestrator; each service publishes and reacts to domain events over RabbitMQ to carry the saga forward.
 
 **Core responsibilities:**
-- Maintain two FIFO queues: **Diagnosis Queue** and **In Execution Queue** — service orders must be processed in the exact order they were received
-- Receive `diagnostic.finished` events via RabbitMQ to register parts and services required for a repair
+- Maintain two FIFO queues: **Diagnosis Queue** and **In Execution Queue** — service orders must be processed in the exact order they were received. Only the head of a queue may advance (`409` otherwise), in both queues
+- Own the diagnosis step: the mechanic registers parts/services through `PATCH /api/executions/:serviceOrderId/diagnosis`, and this service publishes `diagnostic.finished`
+- Consume `order.received` (os-service) and `payment.approved`/`payment.failed`/`quotation.rejected` (billing-service)
 - Update order status throughout the diagnosis and repair lifecycle
 - Notify `fiap-soat-os-service` upon completion via `execution.finished` or `execution.failed` events
 
+Event ownership rule across the ecosystem: **the service that performs a step publishes that step's event.** Each topic exchange belongs to its publisher — `service-order-events` (os-service), `payment-events` (billing-service), `execution-events` (this service).
+
 **Communication:**
 - **Async**: RabbitMQ for event-driven integration with other services
-- **Sync**: REST API (Express) for querying execution queue state
+- **Sync**: REST API (Express) for querying queue state and for the mechanic's diagnosis/repair actions
 
 ## Architecture
 
@@ -45,17 +48,18 @@ The two queues are the central data structure of the service. They behave as ord
 
 ## Commands
 
-> These will be defined as the project is scaffolded. Expected conventions:
-
 ```bash
 npm run build          # Compile TypeScript to dist/
-npm run dev            # Start with hot reload (ts-node-dev or nodemon)
+npm run dev            # Start with hot reload (ts-node-dev)
 npm run lint           # ESLint
 npm run test           # Jest — all tests
 npm run test:unit      # Unit tests only
-npm run test:int       # Integration tests only
-npm run test:coverage  # Coverage report (must stay ≥ 80%)
-npm run test -- --testPathPattern=<file>  # Run a single test file
+npm run test:int       # Integration tests only (requires Postgres from docker compose)
+npm run test:bdd       # Cucumber BDD scenarios (features/)
+npm run test:coverage  # Coverage report (must stay ≥ 80%, unit tests)
+npm run migrate        # Run TypeORM migrations manually (also run on boot)
+npm run publish-event -- <routing.key> <serviceOrderId> [number]  # Simulate sibling services
+npx jest tests/unit/domain/ExecutionOrder.spec.ts  # Run a single test file
 ```
 
 Docker:
