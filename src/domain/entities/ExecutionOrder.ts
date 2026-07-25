@@ -68,7 +68,11 @@ export class ExecutionOrder {
         this.touch();
     }
     cancel(): void {
-        this.assertStatus(ExecutionOrderStatus.AWAITING_PAYMENT, "cancel");
+        this.assertStatusIn([
+            ExecutionOrderStatus.IN_DIAGNOSIS_QUEUE,
+            ExecutionOrderStatus.AWAITING_PAYMENT,
+            ExecutionOrderStatus.IN_EXECUTION_QUEUE
+        ], "cancel");
         this.state.status = ExecutionOrderStatus.CANCELLED;
         this.state.queueSeq = null;
         this.touch();
@@ -95,6 +99,11 @@ export class ExecutionOrder {
     }
     private assertStatus(expected: ExecutionOrderStatus, action: string): void {
         if (this.state.status !== expected) {
+            throw new InvalidTransitionError(this.state.status, action);
+        }
+    }
+    private assertStatusIn(expected: ExecutionOrderStatus[], action: string): void {
+        if (!expected.includes(this.state.status)) {
             throw new InvalidTransitionError(this.state.status, action);
         }
     }

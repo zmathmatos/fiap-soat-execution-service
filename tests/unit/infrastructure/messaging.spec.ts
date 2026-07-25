@@ -9,6 +9,7 @@ import { CancelExecution } from "../../../src/application/use-cases/CancelExecut
 import { ExecutionOrderStatus } from "../../../src/domain/entities/ExecutionOrder";
 import { InMemoryExecutionOrderRepository } from "../../fakes/InMemoryExecutionOrderRepository";
 import { InMemoryProcessedEventRepository } from "../../fakes/InMemoryProcessedEventRepository";
+import { FakeEventPublisher } from "../../fakes/FakeEventPublisher";
 type ConsumeHandler = (msg: ConsumeMessage | null) => void;
 function makeFakeChannel() {
     const handlers = new Map<string, ConsumeHandler>();
@@ -38,6 +39,16 @@ function flush(): Promise<void> {
     return new Promise((resolve) => setImmediate(resolve));
 }
 describe("RabbitMQEventPublisher", () => {
+    it("publishes diagnostic.finished to the execution-events exchange", async () => {
+        const { channel } = makeFakeChannel();
+        const publisher = new RabbitMQEventPublisher(channel as never);
+        await publisher.publishDiagnosticFinished({
+            serviceOrderId: "os-1",
+            parts: [{ id: "p1", name: "Filter", quantity: 1, price: 50 }],
+            services: []
+        });
+        expect(channel.publish).toHaveBeenCalledWith("execution-events", "diagnostic.finished", expect.any(Buffer), expect.objectContaining({ persistent: true, messageId: expect.any(String) }));
+    });
     it("publishes execution.finished to the execution-events exchange", async () => {
         const { channel } = makeFakeChannel();
         const publisher = new RabbitMQEventPublisher(channel as never);
@@ -63,20 +74,22 @@ describe("RabbitMQEventPublisher", () => {
 function makeConsumers() {
     const repo = new InMemoryExecutionOrderRepository();
     const processed = new InMemoryProcessedEventRepository();
+    const publisher = new FakeEventPublisher();
     const { channel, handlers } = makeFakeChannel();
-    const serviceOrderConsumer = new ServiceOrderEventsConsumer(channel as never, processed, new EnqueueForDiagnosis(repo), new RegisterDiagnosis(repo));
+    const serviceOrderConsumer = new ServiceOrderEventsConsumer(channel as never, processed, new EnqueueForDiagnosis(repo));
     const paymentConsumer = new PaymentEventsConsumer(channel as never, processed, new EnqueueForExecution(repo), new CancelExecution(repo));
-    return { repo, processed, channel, handlers, serviceOrderConsumer, paymentConsumer };
+    const registerDiagnosis = new RegisterDiagnosis(repo, publisher);
+    return { repo, processed, channel, handlers, serviceOrderConsumer, paymentConsumer, registerDiagnosis };
 }
 describe("ServiceOrderEventsConsumer", () => {
-    it("binds queue to order.received and diagnostic.finished", async () => {
+    it("binds the queue to order.received only — diagnosis is owned by this service", async () => {
         const { channel, serviceOrderConsumer } = makeConsumers();
         await serviceOrderConsumer.start();
         expect(channel.assertExchange).toHaveBeenCalledWith("service-order-events", "topic", {
             durable: true
         });
         expect(channel.bindQueue).toHaveBeenCalledWith("execution-service.service-order-events", "service-order-events", "order.received");
-        expect(channel.bindQueue).toHaveBeenCalledWith("execution-service.service-order-events", "service-order-events", "diagnostic.finished");
+        expect(channel.bindQueue).toHaveBeenCalledTimes(1);
     });
     it("enqueues an order for diagnosis on order.received and acks", async () => {
         const { repo, channel, handlers, serviceOrderConsumer } = makeConsumers();
@@ -86,21 +99,6 @@ describe("ServiceOrderEventsConsumer", () => {
         const order = await repo.findByServiceOrderId("os-1");
         expect(order?.status).toBe(ExecutionOrderStatus.IN_DIAGNOSIS_QUEUE);
         expect(channel.ack).toHaveBeenCalled();
-    });
-    it("registers diagnosis on diagnostic.finished", async () => {
-        const { repo, handlers, serviceOrderConsumer } = makeConsumers();
-        await serviceOrderConsumer.start();
-        const handler = handlers.get("execution-service.service-order-events")!;
-        handler(makeMessage("order.received", { serviceOrderId: "os-1", serviceOrderNumber: 1 }, "m1"));
-        await flush();
-        handler(makeMessage("diagnostic.finished", {
-            serviceOrderId: "os-1",
-            parts: [{ id: "p1", name: "Filter", quantity: 1, price: 50 }],
-            services: []
-        }, "m2"));
-        await flush();
-        const order = await repo.findByServiceOrderId("os-1");
-        expect(order?.status).toBe(ExecutionOrderStatus.AWAITING_PAYMENT);
     });
     it("skips duplicate messages (same messageId) with ack", async () => {
         const { repo, channel, handlers, serviceOrderConsumer } = makeConsumers();
@@ -116,17 +114,17 @@ describe("ServiceOrderEventsConsumer", () => {
         expect(channel.ack).toHaveBeenCalledTimes(2);
         expect(channel.nack).not.toHaveBeenCalled();
     });
-    it("drops permanently failing messages without requeue (unknown order)", async () => {
-        const { channel, handlers, serviceOrderConsumer } = makeConsumers();
-        await serviceOrderConsumer.start();
-        handlers.get("execution-service.service-order-events")!(makeMessage("diagnostic.finished", { serviceOrderId: "ghost", parts: [], services: [] }, "m3"));
-        await flush();
-        expect(channel.nack).toHaveBeenCalledWith(expect.anything(), false, false);
-    });
     it("drops malformed JSON without requeue", async () => {
         const { channel, handlers, serviceOrderConsumer } = makeConsumers();
         await serviceOrderConsumer.start();
         handlers.get("execution-service.service-order-events")!(makeMessage("order.received", "{not json", "m4"));
+        await flush();
+        expect(channel.nack).toHaveBeenCalledWith(expect.anything(), false, false);
+    });
+    it("drops messages without serviceOrderId without requeue", async () => {
+        const { channel, handlers, serviceOrderConsumer } = makeConsumers();
+        await serviceOrderConsumer.start();
+        handlers.get("execution-service.service-order-events")!(makeMessage("order.received", { serviceOrderNumber: 1 }, "m7"));
         await flush();
         expect(channel.nack).toHaveBeenCalledWith(expect.anything(), false, false);
     });
@@ -147,39 +145,49 @@ describe("ServiceOrderEventsConsumer", () => {
     });
 });
 describe("PaymentEventsConsumer", () => {
-    it("drops messages with unknown routing key without requeue", async () => {
-        const { channel, handlers, paymentConsumer } = makeConsumers();
-        await paymentConsumer.start();
-        handlers.get("execution-service.payment-events")!(makeMessage("payment.mystery", { serviceOrderId: "os-1" }, "c0"));
+    async function seedAwaitingPayment(ctx: ReturnType<typeof makeConsumers>, serviceOrderId: string, serviceOrderNumber: number) {
+        await ctx.serviceOrderConsumer.start();
+        await ctx.paymentConsumer.start();
+        ctx.handlers.get("execution-service.service-order-events")!(makeMessage("order.received", { serviceOrderId, serviceOrderNumber }, `seed-${serviceOrderId}`));
         await flush();
-        expect(channel.nack).toHaveBeenCalledWith(expect.anything(), false, false);
+        await ctx.registerDiagnosis.execute({ serviceOrderId, parts: [], services: [] });
+    }
+    it("drops messages with unknown routing key without requeue", async () => {
+        const ctx = makeConsumers();
+        await ctx.paymentConsumer.start();
+        ctx.handlers.get("execution-service.payment-events")!(makeMessage("payment.mystery", { serviceOrderId: "os-1" }, "c0"));
+        await flush();
+        expect(ctx.channel.nack).toHaveBeenCalledWith(expect.anything(), false, false);
+    });
+    it("drops events for unknown orders without requeue", async () => {
+        const ctx = makeConsumers();
+        await ctx.paymentConsumer.start();
+        ctx.handlers.get("execution-service.payment-events")!(makeMessage("payment.approved", { serviceOrderId: "ghost" }, "c1"));
+        await flush();
+        expect(ctx.channel.nack).toHaveBeenCalledWith(expect.anything(), false, false);
     });
     it("moves order to the execution queue on payment.approved", async () => {
-        const { repo, handlers, serviceOrderConsumer, paymentConsumer } = makeConsumers();
-        await serviceOrderConsumer.start();
-        await paymentConsumer.start();
-        const soHandler = handlers.get("execution-service.service-order-events")!;
-        soHandler(makeMessage("order.received", { serviceOrderId: "os-1", serviceOrderNumber: 1 }, "a1"));
+        const ctx = makeConsumers();
+        await seedAwaitingPayment(ctx, "os-1", 1);
+        ctx.handlers.get("execution-service.payment-events")!(makeMessage("payment.approved", { serviceOrderId: "os-1" }, "a3"));
         await flush();
-        soHandler(makeMessage("diagnostic.finished", { serviceOrderId: "os-1", parts: [], services: [] }, "a2"));
-        await flush();
-        handlers.get("execution-service.payment-events")!(makeMessage("payment.approved", { serviceOrderId: "os-1" }, "a3"));
-        await flush();
-        const order = await repo.findByServiceOrderId("os-1");
+        const order = await ctx.repo.findByServiceOrderId("os-1");
         expect(order?.status).toBe(ExecutionOrderStatus.IN_EXECUTION_QUEUE);
     });
     it("cancels order on payment.failed (saga compensation)", async () => {
-        const { repo, handlers, serviceOrderConsumer, paymentConsumer } = makeConsumers();
-        await serviceOrderConsumer.start();
-        await paymentConsumer.start();
-        const soHandler = handlers.get("execution-service.service-order-events")!;
-        soHandler(makeMessage("order.received", { serviceOrderId: "os-1", serviceOrderNumber: 1 }, "b1"));
+        const ctx = makeConsumers();
+        await seedAwaitingPayment(ctx, "os-1", 1);
+        ctx.handlers.get("execution-service.payment-events")!(makeMessage("payment.failed", { serviceOrderId: "os-1" }, "b3"));
         await flush();
-        soHandler(makeMessage("diagnostic.finished", { serviceOrderId: "os-1", parts: [], services: [] }, "b2"));
+        const order = await ctx.repo.findByServiceOrderId("os-1");
+        expect(order?.status).toBe(ExecutionOrderStatus.CANCELLED);
+    });
+    it("cancels order on quotation.rejected (saga compensation)", async () => {
+        const ctx = makeConsumers();
+        await seedAwaitingPayment(ctx, "os-1", 1);
+        ctx.handlers.get("execution-service.payment-events")!(makeMessage("quotation.rejected", { serviceOrderId: "os-1" }, "d3"));
         await flush();
-        handlers.get("execution-service.payment-events")!(makeMessage("payment.failed", { serviceOrderId: "os-1" }, "b3"));
-        await flush();
-        const order = await repo.findByServiceOrderId("os-1");
+        const order = await ctx.repo.findByServiceOrderId("os-1");
         expect(order?.status).toBe(ExecutionOrderStatus.CANCELLED);
     });
 });

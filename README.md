@@ -5,20 +5,22 @@ Microsserviço de **Execução e Produção** da oficina mecânica (Fase 4).
 ## Responsabilidades
 
 - Gerenciar duas filas **FIFO**: **Fila de Diagnóstico** e **Fila de Execução**;
-- Registrar diagnóstico (peças e serviços necessários) — evento `diagnostic.finished`;
+- Registrar o diagnóstico (peças e serviços necessários) e publicar o evento `diagnostic.finished`;
 - Atualizar progresso durante diagnóstico e reparos;
-- Comunicar finalização ao OS Service — eventos `execution.finished` / `execution.failed`.
+- Comunicar finalização — eventos `execution.finished` / `execution.failed`.
 
 ## Arquitetura
 
-Este serviço faz parte de uma arquitetura de microsserviços coordenada via **Saga Pattern orquestrada**, onde o [OS Service](https://github.com/zmathmatos/fiap-soat-os-service) atua como orquestrador.
+Este serviço faz parte de uma arquitetura de microsserviços coordenada via **Saga Pattern coreografada**: não existe orquestrador central. Cada serviço é dono do seu pedaço do fluxo, publica eventos de domínio no RabbitMQ e reage aos eventos dos outros para levar a saga adiante.
 
 | Repositório | Conteúdo |
 |---|---|
-| [fiap-soat-os-service](https://github.com/zmathmatos/fiap-soat-os-service) | Ordens de serviço, cadastro (usuários/veículos), orquestração da Saga |
+| [fiap-soat-os-service](https://github.com/zmathmatos/fiap-soat-os-service) | Ordens de serviço e cadastros (usuários/veículos/peças/serviços) |
 | [fiap-soat-billing-service](https://github.com/zmathmatos/fiap-soat-billing-service) | Orçamento e pagamento (Mercado Pago) |
-| **fiap-soat-execution-service** | ← Este repo — Fila de execução, diagnóstico e reparos |
+| **fiap-soat-execution-service** | ← Este repo — Filas de diagnóstico e execução, reparos |
 | [fiap-soat-tech-challenge-infra-db](https://github.com/zmathmatos/fiap-soat-tech-challenge-infra-db) | Infraestrutura (EKS, RDS, RabbitMQ, MongoDB) via Terraform |
+
+Regra de propriedade dos eventos: **quem executa a etapa publica o evento dela.** Por isso o `diagnostic.finished` é publicado por este serviço (é ele que possui a fila de diagnóstico e recebe o registro do mecânico), e não pelo os-service.
 
 O código segue **Clean Architecture**:
 
@@ -33,44 +35,47 @@ src/
 ## Ciclo de vida de uma ordem
 
 ```
-order.received ──▶ IN_DIAGNOSIS_QUEUE ──diagnostic.finished──▶ AWAITING_PAYMENT
-                        (fila 1, FIFO)                              │
-                                                     payment.failed │ payment.approved
-                                                          ▼         ▼
-                                                     CANCELLED   IN_EXECUTION_QUEUE (fila 2, FIFO)
-                                                                    │ PATCH /start (só a cabeça da fila)
-                                                                    ▼
-                                                               IN_EXECUTION
-                                                              /            \
-                                                 PATCH /finish              PATCH /fail
-                                                        ▼                        ▼
-                                                    FINISHED                  FAILED
-                                              (execution.finished)      (execution.failed)
+order.received ──▶ IN_DIAGNOSIS_QUEUE ──PATCH /diagnosis──▶ AWAITING_PAYMENT
+    (os-service)      (fila 1, FIFO)     (só a cabeça da fila)     │
+                                         publica diagnostic.finished
+                                                                  │
+                             payment.failed / quotation.rejected   │ payment.approved
+                                          ▼                        ▼
+                                     CANCELLED        IN_EXECUTION_QUEUE (fila 2, FIFO)
+                                                                  │ PATCH /start (só a cabeça da fila)
+                                                                  ▼
+                                                             IN_EXECUTION
+                                                            /            \
+                                               PATCH /finish              PATCH /fail
+                                                      ▼                        ▼
+                                                  FINISHED                  FAILED
+                                            (execution.finished)      (execution.failed)
 ```
 
-- **FIFO garantido**: cada entrada em fila recebe um `queue_seq` de uma sequence do Postgres; consultas ordenam por ele e apenas a **cabeça** da fila de execução pode iniciar reparo (`409` caso contrário).
-- **Compensação da Saga**: `payment.failed` cancela a ordem antes de entrar na fila de execução.
+- **FIFO garantido nas duas filas**: cada entrada em fila recebe um `queue_seq` de uma sequence do Postgres; consultas ordenam por ele e apenas a **cabeça** da fila pode avançar — tanto para registrar diagnóstico quanto para iniciar reparo (`409` caso contrário).
+- **Compensação da Saga**: `payment.failed` e `quotation.rejected` cancelam a ordem; o cancelamento é aceito em qualquer etapa anterior ao início do reparo (fila de diagnóstico, aguardando pagamento ou fila de execução).
 - **Consumers idempotentes**: eventos deduplicados por `messageId` (tabela `processed_events`).
 
 ## Contratos de eventos (RabbitMQ)
+
+Cada exchange pertence ao serviço que publica nela.
 
 ### Consumidos
 
 | Exchange (topic) | Routing key | Publicado por | Payload |
 |---|---|---|---|
 | `service-order-events` | `order.received` | os-service | `{ serviceOrderId, serviceOrderNumber }` |
-| `service-order-events` | `diagnostic.finished` | os-service | `{ serviceOrderId, parts: [{id, name, quantity, price}], services: [{id, name, price}] }` |
 | `payment-events` | `payment.approved` | billing-service | `{ serviceOrderId }` |
 | `payment-events` | `payment.failed` | billing-service | `{ serviceOrderId }` |
+| `payment-events` | `quotation.rejected` | billing-service | `{ serviceOrderId }` |
 
 Filas duráveis: `execution-service.service-order-events`, `execution-service.payment-events`.
-
-> **Nota:** a publicação de `order.received` e `diagnostic.finished` pelo os-service, e o consumo de `execution-events` por ele, são implementados no repositório do os-service.
 
 ### Publicados
 
 | Exchange (topic) | Routing key | Consumido por | Payload |
 |---|---|---|---|
+| `execution-events` | `diagnostic.finished` | os-service | `{ serviceOrderId, parts: [{id, name, quantity, price}], services: [{id, name, price}] }` |
 | `execution-events` | `execution.finished` | os-service | `{ serviceOrderId, finishedAt }` |
 | `execution-events` | `execution.failed` | os-service | `{ serviceOrderId, reason, failedAt }` |
 
@@ -83,7 +88,8 @@ Filas duráveis: `execution-service.service-order-events`, `execution-service.pa
 | `GET` | `/api/queues/diagnosis` | Fila de diagnóstico em ordem FIFO |
 | `GET` | `/api/queues/execution` | Fila de execução em ordem FIFO |
 | `GET` | `/api/executions/:serviceOrderId` | Detalhe da ordem (status, diagnóstico, timestamps) |
-| `PATCH` | `/api/executions/:serviceOrderId/start` | Inicia o reparo — só a cabeça da fila (`409` caso contrário) |
+| `PATCH` | `/api/executions/:serviceOrderId/diagnosis` | Body `{ "parts": [...], "services": [...] }` — só a cabeça da fila de diagnóstico (`409` caso contrário) → publica `diagnostic.finished` |
+| `PATCH` | `/api/executions/:serviceOrderId/start` | Inicia o reparo — só a cabeça da fila de execução (`409` caso contrário) |
 | `PATCH` | `/api/executions/:serviceOrderId/finish` | Conclui o reparo → publica `execution.finished` |
 | `PATCH` | `/api/executions/:serviceOrderId/fail` | Body `{ "reason": "..." }` → publica `execution.failed` |
 | `GET` | `/health` | Liveness (status do banco e do RabbitMQ) |
@@ -103,24 +109,37 @@ Collection do Postman: [`postman_collection.json`](postman_collection.json).
 
 ## Rodando localmente
 
+O broker RabbitMQ é **único para todos os serviços** e sobe junto com o os-service (`docker-compose.dev.yml`, container `fiap-rabbitmq-dev`). Este compose sobe apenas o app e o Postgres dele, conectando-se ao broker pela rede externa `fiap-net`.
+
 ```bash
-# Stack completa: app + Postgres + RabbitMQ (management UI em http://localhost:15672, guest/guest)
+# uma única vez, se a rede ainda não existir
+docker network create fiap-net
+
+# broker + os-service (no repo do os-service)
+docker compose -f docker-compose.dev.yml up
+
+# aqui: app + Postgres (porta 5434 no host)
 docker compose up --build
 
-# Desenvolvimento com hot reload (requer Postgres/RabbitMQ do compose)
+# desenvolvimento com hot reload
 npm install
 npm run dev
 ```
 
 ### Simulando o fluxo completo
 
-O script `scripts/publish-event.ts` simula os serviços vizinhos publicando eventos:
+O script `scripts/publish-event.ts` simula os serviços vizinhos (os-service e billing-service). O `diagnostic.finished` **não** está no script — quem publica é este serviço, via endpoint REST.
 
 ```bash
 SO_ID=$(node -e "console.log(require('crypto').randomUUID())")
 
 npm run publish-event -- order.received $SO_ID 1        # entra na fila de diagnóstico
-npm run publish-event -- diagnostic.finished $SO_ID     # diagnóstico registrado
+
+curl -X PATCH http://localhost:3002/api/executions/$SO_ID/diagnosis \
+  -H "Content-Type: application/json" \
+  -d '{"parts":[{"id":"p1","name":"Pastilha de freio","quantity":2,"price":150}],"services":[{"id":"s1","name":"Troca de pastilhas","price":300}]}'
+                                                        # publica diagnostic.finished
+
 npm run publish-event -- payment.approved $SO_ID        # entra na fila de execução
 
 curl http://localhost:3002/api/queues/execution         # ver a fila

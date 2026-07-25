@@ -67,8 +67,20 @@ describe("ExecutionOrder", () => {
             order.cancel();
             expect(order.status).toBe(ExecutionOrderStatus.CANCELLED);
         });
-        it("rejects cancellation once in the execution queue", () => {
+        it("cancels while still in the diagnosis queue", () => {
+            const order = receivedOrder();
+            order.cancel();
+            expect(order.status).toBe(ExecutionOrderStatus.CANCELLED);
+        });
+        it("cancels while in the execution queue", () => {
             const order = inExecutionQueueOrder();
+            order.cancel();
+            expect(order.status).toBe(ExecutionOrderStatus.CANCELLED);
+            expect(order.queueSeq).toBeNull();
+        });
+        it("rejects cancellation once the repair has started", () => {
+            const order = inExecutionQueueOrder();
+            order.start();
             expect(() => order.cancel()).toThrow(InvalidTransitionError);
         });
     });

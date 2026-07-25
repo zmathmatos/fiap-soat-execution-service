@@ -4,17 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Service Overview
 
-`fiap-soat-execution-service` is a Node.js/TypeScript microservice responsible for managing the work order execution queue in an automotive workshop system. It is part of a larger microservices architecture using the **Saga Pattern (orchestrated)**, where `fiap-soat-os-service` acts as orchestrator.
+`fiap-soat-execution-service` is a Node.js/TypeScript microservice responsible for managing the work order execution queue in an automotive workshop system. It is part of a larger microservices architecture using the **Saga Pattern (choreography)** — there is no central orchestrator; each service publishes and reacts to domain events over RabbitMQ to carry the saga forward.
 
 **Core responsibilities:**
-- Maintain two FIFO queues: **Diagnosis Queue** and **In Execution Queue** — service orders must be processed in the exact order they were received
-- Receive `diagnostic.finished` events via RabbitMQ to register parts and services required for a repair
+- Maintain two FIFO queues: **Diagnosis Queue** and **In Execution Queue** — service orders must be processed in the exact order they were received. Only the head of a queue may advance (`409` otherwise), in both queues
+- Own the diagnosis step: the mechanic registers parts/services through `PATCH /api/executions/:serviceOrderId/diagnosis`, and this service publishes `diagnostic.finished`
+- Consume `order.received` (os-service) and `payment.approved`/`payment.failed`/`quotation.rejected` (billing-service)
 - Update order status throughout the diagnosis and repair lifecycle
 - Notify `fiap-soat-os-service` upon completion via `execution.finished` or `execution.failed` events
 
+Event ownership rule across the ecosystem: **the service that performs a step publishes that step's event.** Each topic exchange belongs to its publisher — `service-order-events` (os-service), `payment-events` (billing-service), `execution-events` (this service).
+
 **Communication:**
 - **Async**: RabbitMQ for event-driven integration with other services
-- **Sync**: REST API (Express) for querying execution queue state
+- **Sync**: REST API (Express) for querying queue state and for the mechanic's diagnosis/repair actions
 
 ## Architecture
 

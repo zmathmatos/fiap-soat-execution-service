@@ -14,9 +14,10 @@ function makeApp() {
     const repo = new InMemoryExecutionOrderRepository();
     const publisher = new FakeEventPublisher();
     const enqueueForDiagnosis = new EnqueueForDiagnosis(repo);
-    const registerDiagnosis = new RegisterDiagnosis(repo);
+    const registerDiagnosis = new RegisterDiagnosis(repo, publisher);
     const enqueueForExecution = new EnqueueForExecution(repo);
     const deps: AppDependencies = {
+        registerDiagnosis,
         startExecution: new StartExecution(repo),
         finishExecution: new FinishExecution(repo, publisher),
         failExecution: new FailExecution(repo, publisher),
@@ -83,6 +84,53 @@ describe("HTTP API", () => {
         const res = await request(app).get("/api/executions/ghost");
         expect(res.status).toBe(404);
         expect(res.body.error).toEqual(expect.any(String));
+    });
+    it("PATCH /diagnosis registers the diagnosis of the head of the diagnosis queue", async () => {
+        const ctx = makeApp();
+        await ctx.enqueueForDiagnosis.execute({ serviceOrderId: "os-1", serviceOrderNumber: 1 });
+        const res = await request(ctx.app)
+            .patch("/api/executions/os-1/diagnosis")
+            .send({
+                parts: [{ id: "p1", name: "Pastilha de freio", quantity: 2, price: 150 }],
+                services: [{ id: "s1", name: "Troca de pastilhas", price: 300 }]
+            });
+        expect(res.status).toBe(200);
+        expect(res.body.status).toBe("AWAITING_PAYMENT");
+        expect(res.body.diagnosis.parts).toHaveLength(1);
+        expect(ctx.publisher.diagnosed).toHaveLength(1);
+    });
+    it("PATCH /diagnosis on a non-head order returns 409", async () => {
+        const ctx = makeApp();
+        await ctx.enqueueForDiagnosis.execute({ serviceOrderId: "os-1", serviceOrderNumber: 1 });
+        await ctx.enqueueForDiagnosis.execute({ serviceOrderId: "os-2", serviceOrderNumber: 2 });
+        const res = await request(ctx.app)
+            .patch("/api/executions/os-2/diagnosis")
+            .send({ parts: [], services: [] });
+        expect(res.status).toBe(409);
+        expect(ctx.publisher.diagnosed).toHaveLength(0);
+    });
+    it("PATCH /diagnosis returns 404 for unknown order", async () => {
+        const ctx = makeApp();
+        const res = await request(ctx.app)
+            .patch("/api/executions/ghost/diagnosis")
+            .send({ parts: [], services: [] });
+        expect(res.status).toBe(404);
+    });
+    it("PATCH /diagnosis returns 422 for an invalid body", async () => {
+        const ctx = makeApp();
+        await ctx.enqueueForDiagnosis.execute({ serviceOrderId: "os-1", serviceOrderNumber: 1 });
+        const res = await request(ctx.app)
+            .patch("/api/executions/os-1/diagnosis")
+            .send({ parts: [{ id: "p1", name: "Pastilha", quantity: 0, price: 150 }], services: [] });
+        expect(res.status).toBe(422);
+    });
+    it("PATCH /diagnosis returns 422 when parts is not an array", async () => {
+        const ctx = makeApp();
+        await ctx.enqueueForDiagnosis.execute({ serviceOrderId: "os-1", serviceOrderNumber: 1 });
+        const res = await request(ctx.app)
+            .patch("/api/executions/os-1/diagnosis")
+            .send({ services: [] });
+        expect(res.status).toBe(422);
     });
     it("PATCH /start starts the head of the queue", async () => {
         const ctx = makeApp();

@@ -13,7 +13,7 @@ export class ExecutionWorld extends World {
     readonly repo = new InMemoryExecutionOrderRepository();
     readonly publisher = new FakeEventPublisher();
     readonly enqueueForDiagnosis = new EnqueueForDiagnosis(this.repo);
-    readonly registerDiagnosis = new RegisterDiagnosis(this.repo);
+    readonly registerDiagnosis = new RegisterDiagnosis(this.repo, this.publisher);
     readonly enqueueForExecution = new EnqueueForExecution(this.repo);
     readonly cancelExecution = new CancelExecution(this.repo);
     readonly startExecution = new StartExecution(this.repo);

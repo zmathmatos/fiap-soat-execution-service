@@ -1,4 +1,5 @@
 import express, { Express, NextFunction, Request, Response } from "express";
+import { RegisterDiagnosis } from "./application/use-cases/RegisterDiagnosis";
 import { StartExecution } from "./application/use-cases/StartExecution";
 import { FinishExecution } from "./application/use-cases/FinishExecution";
 import { FailExecution } from "./application/use-cases/FailExecution";
@@ -8,6 +9,7 @@ import { ExecutionController } from "./interface/http/ExecutionController";
 import { QueueController } from "./interface/http/QueueController";
 import { errorHandler } from "./interface/http/errorHandler";
 export interface AppDependencies {
+    registerDiagnosis: RegisterDiagnosis;
     startExecution: StartExecution;
     finishExecution: FinishExecution;
     failExecution: FailExecution;
@@ -27,7 +29,7 @@ function wrap(handler: AsyncHandler) {
 export function buildApp(deps: AppDependencies): Express {
     const app = express();
     app.use(express.json());
-    const executionController = new ExecutionController(deps.startExecution, deps.finishExecution, deps.failExecution, deps.getExecutionOrder);
+    const executionController = new ExecutionController(deps.registerDiagnosis, deps.startExecution, deps.finishExecution, deps.failExecution, deps.getExecutionOrder);
     const queueController = new QueueController(deps.getQueue);
     app.get("/health", wrap(async (_req, res) => {
         const status = await deps.health();
@@ -35,6 +37,7 @@ export function buildApp(deps: AppDependencies): Express {
     }));
     app.get("/api/queues/:queue", wrap((req, res) => queueController.list(req, res)));
     app.get("/api/executions/:serviceOrderId", wrap((req, res) => executionController.getById(req, res)));
+    app.patch("/api/executions/:serviceOrderId/diagnosis", wrap((req, res) => executionController.diagnose(req, res)));
     app.patch("/api/executions/:serviceOrderId/start", wrap((req, res) => executionController.start(req, res)));
     app.patch("/api/executions/:serviceOrderId/finish", wrap((req, res) => executionController.finish(req, res)));
     app.patch("/api/executions/:serviceOrderId/fail", wrap((req, res) => executionController.fail(req, res)));

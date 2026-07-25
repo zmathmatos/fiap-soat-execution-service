@@ -6,7 +6,7 @@ import { AppDataSource, initializeDatabase } from "./infrastructure/database/typ
 import { TypeORMExecutionOrderRepository } from "./infrastructure/database/typeorm/repositories/TypeORMExecutionOrderRepository";
 import { TypeORMProcessedEventRepository } from "./infrastructure/database/typeorm/repositories/TypeORMProcessedEventRepository";
 import { RabbitMQConnection } from "./infrastructure/messaging/RabbitMQConnection";
-import { RabbitMQEventPublisher } from "./infrastructure/messaging/RabbitMQEventPublisher";
+import { LazyEventPublisher } from "./infrastructure/messaging/LazyEventPublisher";
 import { ServiceOrderEventsConsumer } from "./infrastructure/messaging/ServiceOrderEventsConsumer";
 import { PaymentEventsConsumer } from "./infrastructure/messaging/PaymentEventsConsumer";
 import { EnqueueForDiagnosis } from "./application/use-cases/EnqueueForDiagnosis";
@@ -26,20 +26,12 @@ async function main(): Promise<void> {
     const rabbit = new RabbitMQConnection();
     void (async () => {
         const channel = await rabbit.connectWithRetry();
-        await new ServiceOrderEventsConsumer(channel, processedEvents, new EnqueueForDiagnosis(orderRepository), new RegisterDiagnosis(orderRepository)).start();
+        await new ServiceOrderEventsConsumer(channel, processedEvents, new EnqueueForDiagnosis(orderRepository)).start();
         await new PaymentEventsConsumer(channel, processedEvents, new EnqueueForExecution(orderRepository), new CancelExecution(orderRepository)).start();
     })();
-    const lazyPublisher = {
-        async publishExecutionFinished(event: Parameters<RabbitMQEventPublisher["publishExecutionFinished"]>[0]) {
-            const channel = await rabbit.connectWithRetry();
-            await new RabbitMQEventPublisher(channel).publishExecutionFinished(event);
-        },
-        async publishExecutionFailed(event: Parameters<RabbitMQEventPublisher["publishExecutionFailed"]>[0]) {
-            const channel = await rabbit.connectWithRetry();
-            await new RabbitMQEventPublisher(channel).publishExecutionFailed(event);
-        }
-    };
+    const lazyPublisher = new LazyEventPublisher(rabbit);
     const app = buildApp({
+        registerDiagnosis: new RegisterDiagnosis(orderRepository, lazyPublisher),
         startExecution: new StartExecution(orderRepository),
         finishExecution: new FinishExecution(orderRepository, lazyPublisher),
         failExecution: new FailExecution(orderRepository, lazyPublisher),

@@ -11,6 +11,7 @@ Funcionalidade: Fila de execução de ordens de serviço
     E o mecânico inicia o reparo da "OS-1"
     E o mecânico finaliza o reparo da "OS-1"
     Então o status da "OS-1" é "FINISHED"
+    E o evento "diagnostic.finished" foi publicado para a "OS-1"
     E o evento "execution.finished" foi publicado para a "OS-1"
 
   Cenário: Compensação da Saga — pagamento recusado cancela a execução
@@ -19,6 +20,13 @@ Funcionalidade: Fila de execução de ordens de serviço
     Quando o pagamento da "OS-2" é recusado
     Então o status da "OS-2" é "CANCELLED"
     E a fila de execução está vazia
+
+  Cenário: Ordem FIFO — diagnóstico não pode furar a fila
+    Dado que a ordem de serviço "OS-5" foi recebida
+    E que a ordem de serviço "OS-6" foi recebida
+    Quando o mecânico tenta registrar o diagnóstico da "OS-6"
+    Então a operação é rejeitada por violar a ordem da fila
+    E o status da "OS-6" é "IN_DIAGNOSIS_QUEUE"
 
   Cenário: Ordem FIFO — reparo não pode furar a fila
     Dado que a ordem de serviço "OS-3" foi recebida

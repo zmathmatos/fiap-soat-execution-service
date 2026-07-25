@@ -12,13 +12,16 @@ services:
       DB_PASSWORD: postgres
       DB_NAME: fiap_soat_db
       DB_SCHEMA: execution
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      # Shared broker: the RabbitMQ container lives in the os-service compose
+      # (fiap-rabbitmq-dev) and is reachable here through the external fiap-net.
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672}
       LOG_LEVEL: info
     depends_on:
       postgres:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+    networks:
+      - default
+      - fiap-net
 
   postgres:
     image: postgres:17-alpine
@@ -28,7 +31,8 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: fiap_soat_db
     ports:
-      - "5432:5432"
+      # 5434 on the host: 5432 is taken by the os-service database.
+      - "${DB_PORT:-5434}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -37,17 +41,9 @@ services:
       timeout: 5s
       retries: 10
 
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    container_name: execution-rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
 volumes:
   postgres-data:
+
+networks:
+  fiap-net:
+    external: true

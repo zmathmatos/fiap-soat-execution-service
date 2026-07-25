@@ -10,7 +10,7 @@ export class PaymentEventsConsumer extends EventConsumer {
         super(channel, processedEvents, {
             exchange: env.rabbitmq.paymentExchange,
             queue: env.rabbitmq.paymentQueue,
-            routingKeys: ["payment.approved", "payment.failed"]
+            routingKeys: ["payment.approved", "payment.failed", "quotation.rejected"]
         });
     }
     protected async handle(routingKey: string, payload: unknown): Promise<void> {
@@ -23,6 +23,7 @@ export class PaymentEventsConsumer extends EventConsumer {
                 await this.enqueueForExecution.execute({ serviceOrderId: event.serviceOrderId });
                 break;
             case "payment.failed":
+            case "quotation.rejected":
                 await this.cancelExecution.execute({ serviceOrderId: event.serviceOrderId });
                 break;
             default:

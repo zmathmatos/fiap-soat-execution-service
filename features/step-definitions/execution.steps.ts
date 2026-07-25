@@ -28,6 +28,15 @@ When("o mecânico inicia o reparo da {string}", async function (this: ExecutionW
 When("o mecânico finaliza o reparo da {string}", async function (this: ExecutionWorld, alias: string) {
     await this.finishExecution.execute({ serviceOrderId: alias });
 });
+When("o mecânico tenta registrar o diagnóstico da {string}", async function (this: ExecutionWorld, alias: string) {
+    try {
+        await this.registerDiagnosis.execute({ serviceOrderId: alias, parts: [], services: [] });
+        this.lastError = null;
+    }
+    catch (error) {
+        this.lastError = error as Error;
+    }
+});
 When("o mecânico tenta iniciar o reparo da {string}", async function (this: ExecutionWorld, alias: string) {
     try {
         await this.startExecution.execute({ serviceOrderId: alias });
@@ -43,7 +52,14 @@ Then("o status da {string} é {string}", async function (this: ExecutionWorld, a
     assert.strictEqual(order.status, status);
 });
 Then("o evento {string} foi publicado para a {string}", function (this: ExecutionWorld, event: string, alias: string) {
-    const published = event === "execution.finished" ? this.publisher.finished : this.publisher.failed;
+    const publishedByEvent: Record<string, {
+        serviceOrderId: string;
+    }[]> = {
+        "diagnostic.finished": this.publisher.diagnosed,
+        "execution.finished": this.publisher.finished,
+        "execution.failed": this.publisher.failed
+    };
+    const published = publishedByEvent[event] ?? [];
     assert.ok(published.some((e) => e.serviceOrderId === alias), `Evento "${event}" não publicado para "${alias}"`);
 });
 Then("a fila de execução está vazia", async function (this: ExecutionWorld) {

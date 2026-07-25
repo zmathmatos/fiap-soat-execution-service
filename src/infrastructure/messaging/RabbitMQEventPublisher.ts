@@ -1,11 +1,14 @@
 import { Channel } from "amqplib";
 import { randomUUID } from "crypto";
 import { IEventPublisher } from "../../application/ports/IEventPublisher";
-import { ExecutionFailedEvent, ExecutionFinishedEvent } from "../../domain/events/IntegrationEvents";
+import { DiagnosticFinishedEvent, ExecutionFailedEvent, ExecutionFinishedEvent } from "../../domain/events/IntegrationEvents";
 import { env } from "../config/env";
 import { logger } from "../logger";
 export class RabbitMQEventPublisher implements IEventPublisher {
     constructor(private readonly channel: Channel) { }
+    async publishDiagnosticFinished(event: DiagnosticFinishedEvent): Promise<void> {
+        await this.publish("diagnostic.finished", event);
+    }
     async publishExecutionFinished(event: ExecutionFinishedEvent): Promise<void> {
         await this.publish("execution.finished", event);
     }

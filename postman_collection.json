@@ -38,7 +38,19 @@
       }
     },
     {
-      "name": "Start repair (head of queue only)",
+      "name": "Register diagnosis (head of diagnosis queue only — publishes diagnostic.finished)",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"parts\": [\n    { \"id\": \"11111111-aaaa-4aaa-8aaa-111111111111\", \"name\": \"Pastilha de freio\", \"quantity\": 2, \"price\": 150 }\n  ],\n  \"services\": [\n    { \"id\": \"22222222-bbbb-4bbb-8bbb-222222222222\", \"name\": \"Troca de pastilhas\", \"price\": 300 }\n  ]\n}"
+        },
+        "url": "{{baseUrl}}/api/executions/{{serviceOrderId}}/diagnosis"
+      }
+    },
+    {
+      "name": "Start repair (head of execution queue only)",
       "request": {
         "method": "PATCH",
         "url": "{{baseUrl}}/api/executions/{{serviceOrderId}}/start"

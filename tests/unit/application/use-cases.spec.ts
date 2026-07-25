@@ -1,6 +1,7 @@
 import { ExecutionOrderStatus } from "../../../src/domain/entities/ExecutionOrder";
 import { NotFoundError } from "../../../src/domain/errors/NotFoundError";
 import { NotHeadOfQueueError } from "../../../src/domain/errors/NotHeadOfQueueError";
+import { InvalidTransitionError } from "../../../src/domain/errors/InvalidTransitionError";
 import { EnqueueForDiagnosis } from "../../../src/application/use-cases/EnqueueForDiagnosis";
 import { RegisterDiagnosis } from "../../../src/application/use-cases/RegisterDiagnosis";
 import { EnqueueForExecution } from "../../../src/application/use-cases/EnqueueForExecution";
@@ -23,7 +24,7 @@ function makeSut() {
         repo,
         publisher,
         enqueueForDiagnosis: new EnqueueForDiagnosis(repo),
-        registerDiagnosis: new RegisterDiagnosis(repo),
+        registerDiagnosis: new RegisterDiagnosis(repo, publisher),
         enqueueForExecution: new EnqueueForExecution(repo),
         cancelExecution: new CancelExecution(repo),
         startExecution: new StartExecution(repo),
@@ -69,6 +70,25 @@ describe("RegisterDiagnosis", () => {
         expect(order?.status).toBe(ExecutionOrderStatus.AWAITING_PAYMENT);
         expect(order?.diagnosis?.parts).toEqual(diagnosisPayload.parts);
     });
+    it("publishes diagnostic.finished so billing/os-service can carry the saga forward", async () => {
+        const sut = makeSut();
+        await sut.enqueueForDiagnosis.execute({ serviceOrderId: "os-1", serviceOrderNumber: 1 });
+        await sut.registerDiagnosis.execute({ serviceOrderId: "os-1", ...diagnosisPayload });
+        expect(sut.publisher.diagnosed).toEqual([{ serviceOrderId: "os-1", ...diagnosisPayload }]);
+    });
+    it("rejects diagnosing an order that is not the head of the diagnosis queue (FIFO)", async () => {
+        const sut = makeSut();
+        await sut.enqueueForDiagnosis.execute({ serviceOrderId: "os-1", serviceOrderNumber: 1 });
+        await sut.enqueueForDiagnosis.execute({ serviceOrderId: "os-2", serviceOrderNumber: 2 });
+        await expect(sut.registerDiagnosis.execute({ serviceOrderId: "os-2", ...diagnosisPayload })).rejects.toThrow(NotHeadOfQueueError);
+        expect(sut.publisher.diagnosed).toHaveLength(0);
+    });
+    it("rejects diagnosing an order that already left the diagnosis queue", async () => {
+        const sut = makeSut();
+        await sut.enqueueForDiagnosis.execute({ serviceOrderId: "os-1", serviceOrderNumber: 1 });
+        await sut.registerDiagnosis.execute({ serviceOrderId: "os-1", ...diagnosisPayload });
+        await expect(sut.registerDiagnosis.execute({ serviceOrderId: "os-1", ...diagnosisPayload })).rejects.toThrow(InvalidTransitionError);
+    });
     it("throws NotFoundError for unknown order", async () => {
         const sut = makeSut();
         await expect(sut.registerDiagnosis.execute({ serviceOrderId: "ghost", ...diagnosisPayload })).rejects.toThrow(NotFoundError);
@@ -93,6 +113,20 @@ describe("CancelExecution", () => {
         const sut = makeSut();
         await sut.enqueueForDiagnosis.execute({ serviceOrderId: "os-1", serviceOrderNumber: 1 });
         await sut.registerDiagnosis.execute({ serviceOrderId: "os-1", ...diagnosisPayload });
+        await sut.cancelExecution.execute({ serviceOrderId: "os-1" });
+        const order = await sut.repo.findByServiceOrderId("os-1");
+        expect(order?.status).toBe(ExecutionOrderStatus.CANCELLED);
+    });
+    it("cancels an order still in the diagnosis queue", async () => {
+        const sut = makeSut();
+        await sut.enqueueForDiagnosis.execute({ serviceOrderId: "os-1", serviceOrderNumber: 1 });
+        await sut.cancelExecution.execute({ serviceOrderId: "os-1" });
+        const order = await sut.repo.findByServiceOrderId("os-1");
+        expect(order?.status).toBe(ExecutionOrderStatus.CANCELLED);
+    });
+    it("cancels an order already in the execution queue", async () => {
+        const sut = makeSut();
+        await driveToExecutionQueue(sut, "os-1", 1);
         await sut.cancelExecution.execute({ serviceOrderId: "os-1" });
         const order = await sut.repo.findByServiceOrderId("os-1");
         expect(order?.status).toBe(ExecutionOrderStatus.CANCELLED);

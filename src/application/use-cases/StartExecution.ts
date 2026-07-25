@@ -14,7 +14,7 @@ export class StartExecution {
         const queue = await this.repository.findQueue(ExecutionOrderStatus.IN_EXECUTION_QUEUE);
         const head = queue[0];
         if (!head || head.serviceOrderId !== serviceOrderId) {
-            throw new NotHeadOfQueueError(serviceOrderId);
+            throw new NotHeadOfQueueError(serviceOrderId, "execution");
         }
         order.start();
         await this.repository.save(order);
