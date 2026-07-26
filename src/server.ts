@@ -7,6 +7,8 @@ import { TypeORMExecutionOrderRepository } from "./infrastructure/database/typeo
 import { TypeORMProcessedEventRepository } from "./infrastructure/database/typeorm/repositories/TypeORMProcessedEventRepository";
 import { RabbitMQConnection } from "./infrastructure/messaging/RabbitMQConnection";
 import { LazyEventPublisher } from "./infrastructure/messaging/LazyEventPublisher";
+import { OutboxPublisher } from "./infrastructure/messaging/OutboxPublisher";
+import { TypeORMOutboxRepository } from "./infrastructure/database/typeorm/repositories/TypeORMOutboxRepository";
 import { ServiceOrderEventsConsumer } from "./infrastructure/messaging/ServiceOrderEventsConsumer";
 import { PaymentEventsConsumer } from "./infrastructure/messaging/PaymentEventsConsumer";
 import { EnqueueForDiagnosis } from "./application/use-cases/EnqueueForDiagnosis";
@@ -30,11 +32,13 @@ async function main(): Promise<void> {
         await new PaymentEventsConsumer(channel, processedEvents, new EnqueueForExecution(orderRepository), new CancelExecution(orderRepository)).start();
     })();
     const lazyPublisher = new LazyEventPublisher(rabbit);
+    const outboxRepository = new TypeORMOutboxRepository(dataSource);
+    new OutboxPublisher(outboxRepository, lazyPublisher).start();
     const app = buildApp({
-        registerDiagnosis: new RegisterDiagnosis(orderRepository, lazyPublisher),
+        registerDiagnosis: new RegisterDiagnosis(orderRepository),
         startExecution: new StartExecution(orderRepository),
-        finishExecution: new FinishExecution(orderRepository, lazyPublisher),
-        failExecution: new FailExecution(orderRepository, lazyPublisher),
+        finishExecution: new FinishExecution(orderRepository),
+        failExecution: new FailExecution(orderRepository),
         getQueue: new GetQueue(orderRepository),
         getExecutionOrder: new GetExecutionOrder(orderRepository),
         health: async () => ({

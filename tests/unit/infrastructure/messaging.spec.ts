@@ -9,7 +9,6 @@ import { CancelExecution } from "../../../src/application/use-cases/CancelExecut
 import { ExecutionOrderStatus } from "../../../src/domain/entities/ExecutionOrder";
 import { InMemoryExecutionOrderRepository } from "../../fakes/InMemoryExecutionOrderRepository";
 import { InMemoryProcessedEventRepository } from "../../fakes/InMemoryProcessedEventRepository";
-import { FakeEventPublisher } from "../../fakes/FakeEventPublisher";
 type ConsumeHandler = (msg: ConsumeMessage | null) => void;
 function makeFakeChannel() {
     const handlers = new Map<string, ConsumeHandler>();
@@ -74,11 +73,10 @@ describe("RabbitMQEventPublisher", () => {
 function makeConsumers() {
     const repo = new InMemoryExecutionOrderRepository();
     const processed = new InMemoryProcessedEventRepository();
-    const publisher = new FakeEventPublisher();
     const { channel, handlers } = makeFakeChannel();
     const serviceOrderConsumer = new ServiceOrderEventsConsumer(channel as never, processed, new EnqueueForDiagnosis(repo));
     const paymentConsumer = new PaymentEventsConsumer(channel as never, processed, new EnqueueForExecution(repo), new CancelExecution(repo));
-    const registerDiagnosis = new RegisterDiagnosis(repo, publisher);
+    const registerDiagnosis = new RegisterDiagnosis(repo);
     return { repo, processed, channel, handlers, serviceOrderConsumer, paymentConsumer, registerDiagnosis };
 }
 describe("ServiceOrderEventsConsumer", () => {

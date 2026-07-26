@@ -52,15 +52,11 @@ Then("o status da {string} é {string}", async function (this: ExecutionWorld, a
     assert.strictEqual(order.status, status);
 });
 Then("o evento {string} foi publicado para a {string}", function (this: ExecutionWorld, event: string, alias: string) {
-    const publishedByEvent: Record<string, {
-        serviceOrderId: string;
-    }[]> = {
-        "diagnostic.finished": this.publisher.diagnosed,
-        "execution.finished": this.publisher.finished,
-        "execution.failed": this.publisher.failed
-    };
-    const published = publishedByEvent[event] ?? [];
-    assert.ok(published.some((e) => e.serviceOrderId === alias), `Evento "${event}" não publicado para "${alias}"`);
+    const pending = this.repo.pendingEvents.filter((e) => e.type === event);
+    assert.ok(
+        pending.some((e) => (e.payload as { serviceOrderId?: string }).serviceOrderId === alias),
+        `Evento "${event}" não enfileirado atomicamente para "${alias}"`,
+    );
 });
 Then("a fila de execução está vazia", async function (this: ExecutionWorld) {
     const queue = await this.repo.findQueue(ExecutionOrderStatus.IN_EXECUTION_QUEUE);

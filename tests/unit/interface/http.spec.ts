@@ -9,24 +9,22 @@ import { FailExecution } from "../../../src/application/use-cases/FailExecution"
 import { GetQueue } from "../../../src/application/use-cases/GetQueue";
 import { GetExecutionOrder } from "../../../src/application/use-cases/GetExecutionOrder";
 import { InMemoryExecutionOrderRepository } from "../../fakes/InMemoryExecutionOrderRepository";
-import { FakeEventPublisher } from "../../fakes/FakeEventPublisher";
 function makeApp() {
     const repo = new InMemoryExecutionOrderRepository();
-    const publisher = new FakeEventPublisher();
     const enqueueForDiagnosis = new EnqueueForDiagnosis(repo);
-    const registerDiagnosis = new RegisterDiagnosis(repo, publisher);
+    const registerDiagnosis = new RegisterDiagnosis(repo);
     const enqueueForExecution = new EnqueueForExecution(repo);
     const deps: AppDependencies = {
         registerDiagnosis,
         startExecution: new StartExecution(repo),
-        finishExecution: new FinishExecution(repo, publisher),
-        failExecution: new FailExecution(repo, publisher),
+        finishExecution: new FinishExecution(repo),
+        failExecution: new FailExecution(repo),
         getQueue: new GetQueue(repo),
         getExecutionOrder: new GetExecutionOrder(repo),
         health: async () => ({ database: true, rabbitmq: true })
     };
     const app = buildApp(deps);
-    return { app, repo, publisher, enqueueForDiagnosis, registerDiagnosis, enqueueForExecution };
+    return { app, repo, enqueueForDiagnosis, registerDiagnosis, enqueueForExecution };
 }
 async function seedInExecutionQueue(ctx: ReturnType<typeof makeApp>, id: string, num: number) {
     await ctx.enqueueForDiagnosis.execute({ serviceOrderId: id, serviceOrderNumber: num });
@@ -97,7 +95,7 @@ describe("HTTP API", () => {
         expect(res.status).toBe(200);
         expect(res.body.status).toBe("AWAITING_PAYMENT");
         expect(res.body.diagnosis.parts).toHaveLength(1);
-        expect(ctx.publisher.diagnosed).toHaveLength(1);
+        expect(ctx.repo.pendingEvents).toEqual(expect.arrayContaining([expect.objectContaining({ type: "diagnostic.finished" })]));
     });
     it("PATCH /diagnosis on a non-head order returns 409", async () => {
         const ctx = makeApp();
@@ -107,7 +105,7 @@ describe("HTTP API", () => {
             .patch("/api/executions/os-2/diagnosis")
             .send({ parts: [], services: [] });
         expect(res.status).toBe(409);
-        expect(ctx.publisher.diagnosed).toHaveLength(0);
+        expect(ctx.repo.pendingEvents).toHaveLength(0);
     });
     it("PATCH /diagnosis returns 404 for unknown order", async () => {
         const ctx = makeApp();
@@ -153,7 +151,7 @@ describe("HTTP API", () => {
         const res = await request(ctx.app).patch("/api/executions/os-1/finish");
         expect(res.status).toBe(200);
         expect(res.body.status).toBe("FINISHED");
-        expect(ctx.publisher.finished).toHaveLength(1);
+        expect(ctx.repo.pendingEvents).toEqual(expect.arrayContaining([expect.objectContaining({ type: "execution.finished" })]));
     });
     it("PATCH /finish before start returns 409", async () => {
         const ctx = makeApp();
@@ -177,8 +175,8 @@ describe("HTTP API", () => {
             .send({ reason: "no parts" });
         expect(res.status).toBe(200);
         expect(res.body.status).toBe("FAILED");
-        expect(ctx.publisher.failed).toEqual([
-            expect.objectContaining({ serviceOrderId: "os-1", reason: "no parts" })
-        ]);
+        expect(ctx.repo.pendingEvents).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: "execution.failed", payload: expect.objectContaining({ serviceOrderId: "os-1", reason: "no parts" }) }),
+        ]));
     });
 });
