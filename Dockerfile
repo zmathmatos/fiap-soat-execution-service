@@ -21,9 +21,12 @@ COPY package*.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
+COPY newrelic.js ./
+
+RUN chown -R app:app /app
 
 USER app
 
 EXPOSE 3002
 
-CMD ["node", "dist/server.js"]
+CMD ["node", "-r", "newrelic", "dist/server.js"]
