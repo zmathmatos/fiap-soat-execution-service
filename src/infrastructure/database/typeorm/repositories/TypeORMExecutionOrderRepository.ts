@@ -1,8 +1,11 @@
+import { randomUUID } from "crypto";
 import { DataSource, Repository } from "typeorm";
 import { ExecutionOrder, ExecutionOrderStatus } from "../../../../domain/entities/ExecutionOrder";
 import { Diagnosis } from "../../../../domain/value-objects/Diagnosis";
 import { IExecutionOrderRepository } from "../../../../domain/repositories/IExecutionOrderRepository";
+import { OutboxEvent } from "../../../../domain/events/OutboxEvent";
 import { ExecutionOrderEntity } from "../entities/ExecutionOrderEntity";
+import { OutboxEventEntity } from "../entities/OutboxEventEntity";
 export class TypeORMExecutionOrderRepository implements IExecutionOrderRepository {
     private readonly repo: Repository<ExecutionOrderEntity>;
     constructor(private readonly dataSource: DataSource) {
@@ -10,6 +13,18 @@ export class TypeORMExecutionOrderRepository implements IExecutionOrderRepositor
     }
     async save(order: ExecutionOrder): Promise<void> {
         await this.repo.save(toEntity(order));
+    }
+    async atomicSaveWithEvent(order: ExecutionOrder, event: OutboxEvent): Promise<void> {
+        await this.dataSource.transaction(async (manager) => {
+            await manager.save(ExecutionOrderEntity, toEntity(order));
+            const outboxEntity = new OutboxEventEntity();
+            outboxEntity.id = randomUUID();
+            outboxEntity.eventType = event.type;
+            outboxEntity.payload = event.payload;
+            outboxEntity.createdAt = new Date();
+            outboxEntity.publishedAt = null;
+            await manager.save(OutboxEventEntity, outboxEntity);
+        });
     }
     async findByServiceOrderId(serviceOrderId: string): Promise<ExecutionOrder | null> {
         const entity = await this.repo.findOneBy({ serviceOrderId });

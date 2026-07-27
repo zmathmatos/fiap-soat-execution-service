@@ -1,6 +1,5 @@
 import { setWorldConstructor, World } from "@cucumber/cucumber";
 import { InMemoryExecutionOrderRepository } from "../../tests/fakes/InMemoryExecutionOrderRepository";
-import { FakeEventPublisher } from "../../tests/fakes/FakeEventPublisher";
 import { EnqueueForDiagnosis } from "../../src/application/use-cases/EnqueueForDiagnosis";
 import { RegisterDiagnosis } from "../../src/application/use-cases/RegisterDiagnosis";
 import { EnqueueForExecution } from "../../src/application/use-cases/EnqueueForExecution";
@@ -11,14 +10,13 @@ import { FailExecution } from "../../src/application/use-cases/FailExecution";
 import { GetQueue } from "../../src/application/use-cases/GetQueue";
 export class ExecutionWorld extends World {
     readonly repo = new InMemoryExecutionOrderRepository();
-    readonly publisher = new FakeEventPublisher();
     readonly enqueueForDiagnosis = new EnqueueForDiagnosis(this.repo);
-    readonly registerDiagnosis = new RegisterDiagnosis(this.repo, this.publisher);
+    readonly registerDiagnosis = new RegisterDiagnosis(this.repo);
     readonly enqueueForExecution = new EnqueueForExecution(this.repo);
     readonly cancelExecution = new CancelExecution(this.repo);
     readonly startExecution = new StartExecution(this.repo);
-    readonly finishExecution = new FinishExecution(this.repo, this.publisher);
-    readonly failExecution = new FailExecution(this.repo, this.publisher);
+    readonly finishExecution = new FinishExecution(this.repo);
+    readonly failExecution = new FailExecution(this.repo);
     readonly getQueue = new GetQueue(this.repo);
     lastError: Error | null = null;
     private orderNumbers = new Map<string, number>();

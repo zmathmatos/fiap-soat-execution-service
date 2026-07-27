@@ -12,24 +12,21 @@ import { FailExecution } from "../../../src/application/use-cases/FailExecution"
 import { GetQueue } from "../../../src/application/use-cases/GetQueue";
 import { GetExecutionOrder } from "../../../src/application/use-cases/GetExecutionOrder";
 import { InMemoryExecutionOrderRepository } from "../../fakes/InMemoryExecutionOrderRepository";
-import { FakeEventPublisher } from "../../fakes/FakeEventPublisher";
 const diagnosisPayload = {
     parts: [{ id: "p1", name: "Filter", quantity: 1, price: 50 }],
     services: [{ id: "s1", name: "Oil change", price: 120 }]
 };
 function makeSut() {
     const repo = new InMemoryExecutionOrderRepository();
-    const publisher = new FakeEventPublisher();
     return {
         repo,
-        publisher,
         enqueueForDiagnosis: new EnqueueForDiagnosis(repo),
-        registerDiagnosis: new RegisterDiagnosis(repo, publisher),
+        registerDiagnosis: new RegisterDiagnosis(repo),
         enqueueForExecution: new EnqueueForExecution(repo),
         cancelExecution: new CancelExecution(repo),
         startExecution: new StartExecution(repo),
-        finishExecution: new FinishExecution(repo, publisher),
-        failExecution: new FailExecution(repo, publisher),
+        finishExecution: new FinishExecution(repo),
+        failExecution: new FailExecution(repo),
         getQueue: new GetQueue(repo),
         getExecutionOrder: new GetExecutionOrder(repo)
     };
@@ -70,18 +67,20 @@ describe("RegisterDiagnosis", () => {
         expect(order?.status).toBe(ExecutionOrderStatus.AWAITING_PAYMENT);
         expect(order?.diagnosis?.parts).toEqual(diagnosisPayload.parts);
     });
-    it("publishes diagnostic.finished so billing/os-service can carry the saga forward", async () => {
+    it("enqueues diagnostic.finished atomically so billing/os-service can carry the saga forward", async () => {
         const sut = makeSut();
         await sut.enqueueForDiagnosis.execute({ serviceOrderId: "os-1", serviceOrderNumber: 1 });
         await sut.registerDiagnosis.execute({ serviceOrderId: "os-1", ...diagnosisPayload });
-        expect(sut.publisher.diagnosed).toEqual([{ serviceOrderId: "os-1", ...diagnosisPayload }]);
+        expect(sut.repo.pendingEvents).toEqual([
+            expect.objectContaining({ type: "diagnostic.finished", payload: expect.objectContaining({ serviceOrderId: "os-1" }) }),
+        ]);
     });
     it("rejects diagnosing an order that is not the head of the diagnosis queue (FIFO)", async () => {
         const sut = makeSut();
         await sut.enqueueForDiagnosis.execute({ serviceOrderId: "os-1", serviceOrderNumber: 1 });
         await sut.enqueueForDiagnosis.execute({ serviceOrderId: "os-2", serviceOrderNumber: 2 });
         await expect(sut.registerDiagnosis.execute({ serviceOrderId: "os-2", ...diagnosisPayload })).rejects.toThrow(NotHeadOfQueueError);
-        expect(sut.publisher.diagnosed).toHaveLength(0);
+        expect(sut.repo.pendingEvents).toHaveLength(0);
     });
     it("rejects diagnosing an order that already left the diagnosis queue", async () => {
         const sut = makeSut();
@@ -148,29 +147,33 @@ describe("StartExecution", () => {
     });
 });
 describe("FinishExecution", () => {
-    it("finishes the repair and publishes execution.finished", async () => {
+    it("finishes the repair and enqueues execution.finished atomically", async () => {
         const sut = makeSut();
         await driveToExecutionQueue(sut, "os-1", 1);
         await sut.startExecution.execute({ serviceOrderId: "os-1" });
         await sut.finishExecution.execute({ serviceOrderId: "os-1" });
         const order = await sut.repo.findByServiceOrderId("os-1");
         expect(order?.status).toBe(ExecutionOrderStatus.FINISHED);
-        expect(sut.publisher.finished).toEqual([
-            { serviceOrderId: "os-1", finishedAt: expect.any(String) }
-        ]);
+        expect(sut.repo.pendingEvents).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ type: "execution.finished", payload: expect.objectContaining({ serviceOrderId: "os-1", finishedAt: expect.any(String) }) }),
+            ]),
+        );
     });
 });
 describe("FailExecution", () => {
-    it("fails the repair and publishes execution.failed", async () => {
+    it("fails the repair and enqueues execution.failed atomically", async () => {
         const sut = makeSut();
         await driveToExecutionQueue(sut, "os-1", 1);
         await sut.startExecution.execute({ serviceOrderId: "os-1" });
         await sut.failExecution.execute({ serviceOrderId: "os-1", reason: "engine seized" });
         const order = await sut.repo.findByServiceOrderId("os-1");
         expect(order?.status).toBe(ExecutionOrderStatus.FAILED);
-        expect(sut.publisher.failed).toEqual([
-            { serviceOrderId: "os-1", reason: "engine seized", failedAt: expect.any(String) }
-        ]);
+        expect(sut.repo.pendingEvents).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ type: "execution.failed", payload: expect.objectContaining({ serviceOrderId: "os-1", reason: "engine seized", failedAt: expect.any(String) }) }),
+            ]),
+        );
     });
 });
 describe("GetQueue", () => {

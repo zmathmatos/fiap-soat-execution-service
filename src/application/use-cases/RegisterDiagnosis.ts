@@ -3,14 +3,13 @@ import { Diagnosis, DiagnosisPart, DiagnosisService } from "../../domain/value-o
 import { NotFoundError } from "../../domain/errors/NotFoundError";
 import { NotHeadOfQueueError } from "../../domain/errors/NotHeadOfQueueError";
 import { IExecutionOrderRepository } from "../../domain/repositories/IExecutionOrderRepository";
-import { IEventPublisher } from "../ports/IEventPublisher";
 interface Input {
     serviceOrderId: string;
     parts: DiagnosisPart[];
     services: DiagnosisService[];
 }
 export class RegisterDiagnosis {
-    constructor(private readonly repository: IExecutionOrderRepository, private readonly publisher: IEventPublisher) { }
+    constructor(private readonly repository: IExecutionOrderRepository) { }
     async execute({ serviceOrderId, parts, services }: Input): Promise<void> {
         const order = await this.repository.findByServiceOrderId(serviceOrderId);
         if (!order)
@@ -23,7 +22,9 @@ export class RegisterDiagnosis {
             }
         }
         order.registerDiagnosis(new Diagnosis(parts, services));
-        await this.repository.save(order);
-        await this.publisher.publishDiagnosticFinished({ serviceOrderId, parts, services });
+        await this.repository.atomicSaveWithEvent(order, {
+            type: "diagnostic.finished",
+            payload: { serviceOrderId, parts, services },
+        });
     }
 }
