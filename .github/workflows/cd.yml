@@ -3,7 +3,7 @@ name: CD - Build, Push to ECR and Deploy to EKS
 on:
   push:
     branches:
-      - master
+      - main
     paths-ignore:
       - "**/*.md"
       - "docs/**"
@@ -99,6 +99,7 @@ jobs:
           DB_HOST: ${{ secrets.DB_HOST }}
           DB_PORT: ${{ secrets.DB_PORT }}
           DB_NAME: ${{ secrets.DB_NAME }}
+          NEW_RELIC_APP_NAME: ${{ vars.NEW_RELIC_APP_NAME || 'fiap-execution-service' }}
         run: |
           kubectl -n "$K8S_NAMESPACE" create configmap "${APP_NAME}-config" \
             --from-literal=DB_HOST="$DB_HOST" \
@@ -108,6 +109,13 @@ jobs:
             --from-literal=PORT="3002" \
             --from-literal=NODE_ENV="production" \
             --from-literal=LOG_LEVEL="info" \
+            --from-literal=NEW_RELIC_ENABLED="true" \
+            --from-literal=NEW_RELIC_APP_NAME="$NEW_RELIC_APP_NAME" \
+            --from-literal=NEW_RELIC_LOG_LEVEL="info" \
+            --from-literal=NEW_RELIC_LOG="stdout" \
+            --from-literal=NEW_RELIC_DISTRIBUTED_TRACING_ENABLED="true" \
+            --from-literal=NEW_RELIC_APPLICATION_LOGGING_ENABLED="true" \
+            --from-literal=NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED="true" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply Secret
@@ -115,11 +123,13 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           RABBITMQ_URL: ${{ secrets.RABBITMQ_URL }}
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
         run: |
           kubectl -n "$K8S_NAMESPACE" create secret generic "${APP_NAME}-secret" \
             --from-literal=DB_USER="$DB_USER" \
             --from-literal=DB_PASSWORD="$DB_PASSWORD" \
             --from-literal=RABBITMQ_URL="$RABBITMQ_URL" \
+            --from-literal=NEW_RELIC_LICENSE_KEY="$NEW_RELIC_LICENSE_KEY" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Render & apply manifests

@@ -1,5 +1,8 @@
 # FIAP SOAT Tech Challenge - Execution Service
 
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=zmathmatos_fiap-soat-execution-service&metric=alert_status)](https://sonarcloud.io/summary/overall?id=zmathmatos_fiap-soat-execution-service)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=zmathmatos_fiap-soat-execution-service&metric=coverage)](https://sonarcloud.io/component_measures?id=zmathmatos_fiap-soat-execution-service&metric=coverage)
+
 Microsserviço de **Execução e Produção** da oficina mecânica (Fase 4).
 
 ## Responsabilidades
@@ -157,11 +160,23 @@ npm run test:coverage   # cobertura (mínimo 80% enforced)
 npm run lint            # ESLint
 ```
 
+## Observabilidade
+
+O serviço roda com o agente APM do New Relic carregado antes da aplicação (`node -r newrelic dist/server.js`). A configuração fica em `newrelic.js` e é controlada por variáveis de ambiente, então o agente só sobe quando `NEW_RELIC_ENABLED=true` — em desenvolvimento e nos testes ele fica desligado.
+
+| Variável | Origem | Descrição |
+|---|---|---|
+| `NEW_RELIC_ENABLED` | ConfigMap (CD) | Liga o agente. `true` em produção |
+| `NEW_RELIC_APP_NAME` | Variable do repo | Nome da aplicação no New Relic. Padrão: `fiap-execution-service` |
+| `NEW_RELIC_LICENSE_KEY` | Secret do repo | Chave de licença da conta |
+
+O **distributed tracing** está habilitado nos três microsserviços, o que permite acompanhar uma ordem de serviço atravessando `os-service → execution-service → billing-service` em um único trace, mesmo com os saltos assíncronos via RabbitMQ. O forwarding de logs também está ligado, então os logs do Pino aparecem correlacionados com as transações.
+
 ## CI/CD
 
 - **CI** (`.github/workflows/ci.yml`): lint → testes unitários → integração (Postgres em service container) → BDD → cobertura + SonarCloud → build.
-- **CD** (`.github/workflows/cd.yml`): push em `master` → build da imagem → ECR → deploy no EKS (`k8s/deployment.yaml`).
+- **CD** (`.github/workflows/cd.yml`): push em `main` → build da imagem → ECR → deploy no EKS (`k8s/deployment.yaml`).
 
 ## Stack
 
-Node.js 22, TypeScript 5, Express 5, TypeORM + PostgreSQL, RabbitMQ (amqplib), Pino, Jest, Cucumber, Docker, Kubernetes (EKS), GitHub Actions, SonarCloud.
+Node.js 22, TypeScript 5, Express 5, TypeORM + PostgreSQL, RabbitMQ (amqplib), Pino, New Relic APM, Jest, Cucumber, Docker, Kubernetes (EKS), GitHub Actions, SonarCloud.

@@ -4,7 +4,7 @@ import { IEventPublisher } from "../../application/ports/IEventPublisher";
 import { DiagnosticFinishedEvent, ExecutionFailedEvent, ExecutionFinishedEvent } from "../../domain/events/IntegrationEvents";
 import { logger } from "../logger";
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = Number(process.env.OUTBOX_POLL_INTERVAL_MS ?? 1000);
 
 export class OutboxPublisher {
     private timer: ReturnType<typeof setTimeout> | null = null;
