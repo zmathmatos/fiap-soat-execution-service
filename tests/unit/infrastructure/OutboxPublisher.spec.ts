@@ -52,7 +52,7 @@ describe("OutboxPublisher", () => {
 
     it("starts polling on start()", async () => {
         publisher.start();
-        jest.advanceTimersByTime(5000);
+        jest.advanceTimersByTime(1000);
         await flushMicrotasks();
         expect(outboxRepo.findUnpublished).toHaveBeenCalledTimes(1);
     });
@@ -62,7 +62,7 @@ describe("OutboxPublisher", () => {
         outboxRepo.findUnpublished.mockResolvedValueOnce([event]);
 
         publisher.start();
-        jest.advanceTimersByTime(5000);
+        jest.advanceTimersByTime(1000);
         await flushMicrotasks();
 
         expect(eventPublisher.publishDiagnosticFinished).toHaveBeenCalledWith(event.payload);
@@ -74,7 +74,7 @@ describe("OutboxPublisher", () => {
         outboxRepo.findUnpublished.mockResolvedValueOnce([event]);
 
         publisher.start();
-        jest.advanceTimersByTime(5000);
+        jest.advanceTimersByTime(1000);
         await flushMicrotasks();
 
         expect(eventPublisher.publishExecutionFinished).toHaveBeenCalledWith(event.payload);
@@ -86,7 +86,7 @@ describe("OutboxPublisher", () => {
         outboxRepo.findUnpublished.mockResolvedValueOnce([event]);
 
         publisher.start();
-        jest.advanceTimersByTime(5000);
+        jest.advanceTimersByTime(1000);
         await flushMicrotasks();
 
         expect(eventPublisher.publishExecutionFailed).toHaveBeenCalledWith(event.payload);
@@ -99,7 +99,7 @@ describe("OutboxPublisher", () => {
         eventPublisher.publishDiagnosticFinished.mockRejectedValueOnce(new Error("broker down"));
 
         publisher.start();
-        jest.advanceTimersByTime(5000);
+        jest.advanceTimersByTime(1000);
         await flushMicrotasks();
 
         expect(outboxRepo.markPublished).not.toHaveBeenCalled();
@@ -111,9 +111,9 @@ describe("OutboxPublisher", () => {
             .mockResolvedValue([]);
 
         publisher.start();
-        jest.advanceTimersByTime(5000);
+        jest.advanceTimersByTime(1000);
         await flushMicrotasks();
-        jest.advanceTimersByTime(5000);
+        jest.advanceTimersByTime(1000);
         await flushMicrotasks();
 
         expect(outboxRepo.findUnpublished).toHaveBeenCalledTimes(2);
@@ -122,7 +122,7 @@ describe("OutboxPublisher", () => {
     it("stops polling after stop()", async () => {
         publisher.start();
         publisher.stop();
-        jest.advanceTimersByTime(5000);
+        jest.advanceTimersByTime(1000);
         await flushMicrotasks();
 
         expect(outboxRepo.findUnpublished).not.toHaveBeenCalled();
