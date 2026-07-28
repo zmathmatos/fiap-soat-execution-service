@@ -5,8 +5,22 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:3002" },
-    { "key": "serviceOrderId", "value": "11111111-1111-1111-1111-111111111111" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3002"
+    },
+    {
+      "key": "serviceOrderId",
+      "value": "11111111-1111-1111-1111-111111111111"
+    },
+    {
+      "key": "partId",
+      "value": ""
+    },
+    {
+      "key": "serviceId",
+      "value": ""
+    }
   ],
   "item": [
     {
@@ -41,10 +55,15 @@
       "name": "Register diagnosis (head of diagnosis queue only — publishes diagnostic.finished)",
       "request": {
         "method": "PATCH",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"parts\": [\n    { \"id\": \"11111111-aaaa-4aaa-8aaa-111111111111\", \"name\": \"Pastilha de freio\", \"quantity\": 2, \"price\": 150 }\n  ],\n  \"services\": [\n    { \"id\": \"22222222-bbbb-4bbb-8bbb-222222222222\", \"name\": \"Troca de pastilhas\", \"price\": 300 }\n  ]\n}"
+          "raw": "{\n  \"parts\": [\n    { \"id\": \"{{partId}}\", \"name\": \"Pastilha de freio\", \"quantity\": 2, \"price\": 150 }\n  ],\n  \"services\": [\n    { \"id\": \"{{serviceId}}\", \"name\": \"Troca de pastilhas\", \"price\": 300 }\n  ]\n}"
         },
         "url": "{{baseUrl}}/api/executions/{{serviceOrderId}}/diagnosis"
       }
@@ -67,7 +86,12 @@
       "name": "Fail repair (publishes execution.failed)",
       "request": {
         "method": "PATCH",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
         "body": {
           "mode": "raw",
           "raw": "{\n  \"reason\": \"Peça indisponível no estoque\"\n}"
